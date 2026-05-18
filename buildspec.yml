@@ -1,0 +1,89 @@
+version: 0.2
+
+# バックエンドのDockerイメージをビルドし、ECRへpushしてECSを更新する
+# DEPLOY_FLG=trueの場合のみGitHub Actionsから実行される
+phases:
+  pre_build:
+    commands:
+      # リリースタグのデフォルト設定
+      - SHORT_SHA=$(echo $CODEBUILD_RESOLVED_SOURCE_VERSION | cut -c 1-7)
+
+      # 実行中の環境を即座にログ出力
+      - |
+        echo "============================================"
+        echo "CodeBuild Environment: DEPLOY_ENV=$DEPLOY_ENV"
+        echo "RELEASE_TAG=$RELEASE_TAG"
+        echo "============================================"
+
+      # ECR認証とアカウント情報取得
+      - echo Logging in to Amazon ECR on `date`
+      - ACCOUNT_ID_FROM_STS=$(aws sts get-caller-identity --query Account --output text)
+      - AWS_ACCOUNT_ID=${AWS_ACCOUNT_ID:-$ACCOUNT_ID_FROM_STS}
+      - |
+        if [ -z "$AWS_ACCOUNT_ID" ]; then
+          echo "AWS_ACCOUNT_ID is empty"
+          exit 1
+        fi
+      - 'echo "Using AWS account: $AWS_ACCOUNT_ID"'
+      - aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com
+      - |
+        if [ -f "backend/Dockerfile" ]; then
+          APP_DIR=backend
+        elif [ -f "Dockerfile" ]; then
+          APP_DIR=.
+        else
+          echo "Dockerfile not found"
+          echo "Current directory: $(pwd)"
+          echo "Directory listing:"
+          ls -la
+          exit 1
+        fi
+      - IMAGE_URI=$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_CONTAINER_NAME
+      - echo "APP_DIR=$APP_DIR"
+      - echo "RELEASE_TAG=$RELEASE_TAG"
+      - echo "IMAGE_URI=$IMAGE_URI"
+
+  build:
+    # Dockerイメージをビルドして複数タグを付与するフェーズ
+    commands:
+      - echo Build started on `date`
+      - echo Building the Docker image...
+      - |
+        if [ -f "backend/Dockerfile" ]; then
+          APP_DIR=backend
+        elif [ -f "Dockerfile" ]; then
+          APP_DIR=.
+        else
+          echo "Dockerfile not found"
+          exit 1
+        fi
+      - IMAGE_URI=$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_CONTAINER_NAME
+      - docker build -t $IMAGE_URI:$RELEASE_TAG $APP_DIR
+      - |
+        if [[ ! $RELEASE_TAG =~ ^sha- ]]; then
+          docker tag $IMAGE_URI:$RELEASE_TAG $IMAGE_URI:sha-$SHORT_SHA
+        fi
+      - docker tag $IMAGE_URI:$RELEASE_TAG $IMAGE_URI:latest
+      - echo Build completed on `date`
+
+  post_build:
+    # ECRへpushし、ECSサービスを再デプロイするフェーズ
+    commands:
+      - IMAGE_URI=$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_CONTAINER_NAME
+      - echo Pushing the Docker images to ECR on `date`
+      - docker push $IMAGE_URI:$RELEASE_TAG
+      - |
+        if [[ ! $RELEASE_TAG =~ ^sha- ]]; then
+          docker push $IMAGE_URI:sha-$SHORT_SHA
+        fi
+      - docker push $IMAGE_URI:latest
+      - echo "Docker Push completed"
+      - echo Updating ECS Service...
+      - |
+        ACTIVE_SERVICE_COUNT=$(aws ecs describe-services --cluster $ECS_CLUSTER_NAME --services $ECS_SERVICE --region $AWS_REGION --query "length(services[?status=='ACTIVE'])" --output text 2>/dev/null || echo 0)
+        if [ "$ACTIVE_SERVICE_COUNT" = "1" ]; then
+          aws ecs update-service --cluster $ECS_CLUSTER_NAME --service $ECS_SERVICE --force-new-deployment --region $AWS_REGION
+          echo "ECS Service update completed"
+        else
+          echo "ECS Service $ECS_SERVICE was not found. Skipping update-service for bootstrap run."
+        fi

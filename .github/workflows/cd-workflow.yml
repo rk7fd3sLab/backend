@@ -1,0 +1,142 @@
+name: Deploy work flow for Backend
+# このワークフローは、ブランチのpush/タグ作成に応じて、
+# CodeBuildを実行してDockerイメージのビルド・デプロイを行う
+
+# developへのpush時はdev、release/**へのpush時はstage、タグpush時はrealへデプロイ
+on:
+  # develop/release/** へのpush: 開発・ステージング環境デプロイ
+  push:
+    branches:
+      - develop
+      - 'release/**'
+    # バージョンタグpush: 本番環境デプロイ
+    tags:
+      - '*.*.*'
+
+env:
+  # JavaScriptアクションをNode.js 24で実行
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  deploy:
+    name: deploy
+    # 想定イベント以外では実行しない
+    if: |
+      (github.event_name == 'push' && github.ref == 'refs/heads/develop') ||
+      (github.event_name == 'push' && startsWith(github.ref, 'refs/heads/release/')) ||
+      (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/'))
+    # 発火イベントより、展開する環境を判別
+    # develop=dev, release/**=stage, tag=real
+    environment: ${{ (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')) && 'real' || (github.event_name == 'push' && startsWith(github.ref, 'refs/heads/release/')) && 'stage' || 'dev' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      # 既定値（.env / vars どちらにも無い場合の最終フォールバック）
+      # 最終的な優先順位は「GitHub vars > .env.<env> > ここでの既定値」
+      DEPLOY_FLG: "false"
+      # GitHub Environment Secretsから参照
+      SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}
+
+    steps:
+    # ステップ0: トリガー情報をログ出力（デバッグ用）
+    - name: Log trigger info
+      run: |
+        echo "event_name : ${{ github.event_name }}"
+        echo "ref        : ${{ github.ref }}"
+        echo "ref_name   : ${{ github.ref_name }}"
+
+    # ステップ1: ソースコードをチェックアウト
+    - name: Checkout
+      uses: actions/checkout@v2
+
+    # ステップ2: DEPLOY_ENVを決定し、対応する .env ファイルを読み込む
+    - name: Resolve DEPLOY_ENV and load .env file
+      id: deploy_context
+      uses: ./.github/actions/resolve-deploy-env
+      with:
+        github_ref: ${{ github.ref }}
+        vars_deploy_flg: ${{ vars.DEPLOY_FLG }}
+        vars_aws_region: ${{ vars.AWS_REGION }}
+        vars_codebuild_project_name: ${{ vars.CODEBUILD_PROJECT_NAME }}
+        vars_ecr_container_name: ${{ vars.ECR_CONTAINER_NAME }}
+        vars_ecs_service: ${{ vars.ECS_SERVICE }}
+        vars_ecs_cluster_name: ${{ vars.ECS_CLUSTER_NAME }}
+
+    # ステップ2.5〜2.6: DEPLOY_FLG判定と必須設定チェック
+    - name: Validate and Gate Deployment
+      id: deploy_gate
+      uses: ./.github/actions/validate-and-gate
+      with:
+        aws_account_id: ${{ secrets.AWS_ACCOUNT_ID }}
+        aws_access_key_id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws_secret_access_key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+
+    # ステップ3: AWS認証を設定
+    - name: Configure AWS credentials
+      if: steps.deploy_gate.outputs.deploy_enabled == 'true'
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+
+    # ステップ4: CodeBuildジョブ実行と監視
+    - name: Start CodeBuild and wait for result
+      id: codebuild
+      if: steps.deploy_gate.outputs.deploy_enabled == 'true'
+      uses: ./.github/actions/run-codebuild
+      with:
+        github_sha: ${{ github.sha }}
+        github_ref: ${{ github.ref }}
+        github_ref_name: ${{ github.ref_name }}
+        deploy_env: ${{ steps.deploy_context.outputs.deploy_env }}
+        aws_account_id: ${{ secrets.AWS_ACCOUNT_ID }}
+        aws_region: ${{ env.AWS_REGION }}
+        codebuild_project_name: ${{ env.CODEBUILD_PROJECT_NAME }}
+        ecr_container_name: ${{ env.ECR_CONTAINER_NAME }}
+        ecs_service: ${{ env.ECS_SERVICE }}
+        ecs_cluster_name: ${{ env.ECS_CLUSTER_NAME }}
+
+    # Slack通知: DEPLOY_FLGがfalseの場合
+    - name: Notify Skipped
+      if: always() && steps.deploy_gate.outputs.deploy_enabled == 'false' && env.SLACK_WEBHOOK != ''
+      uses: ./.github/actions/notify-slack
+      with:
+        status: skipped
+        deploy_env: ${{ steps.deploy_context.outputs.deploy_env }}
+        slack_webhook: ${{ env.SLACK_WEBHOOK }}
+
+    # Slack通知: DEPLOY_FLG=false だが Webhook 未設定の場合は警告ログを残す
+    - name: Warn skipped notification not sent
+      if: always() && steps.deploy_gate.outputs.deploy_enabled == 'false' && env.SLACK_WEBHOOK == ''
+      run: |
+        echo "::warning::DEPLOY_FLG=false でデプロイはスキップされましたが、SLACK_WEBHOOK が未設定のため通知は送信されませんでした。"
+
+    # Slack通知: 成功
+    - name: Notify Success
+      if: success() && env.SLACK_WEBHOOK != '' && steps.deploy_gate.outputs.deploy_enabled == 'true'
+      uses: ./.github/actions/notify-slack
+      with:
+        status: success
+        deploy_env: ${{ steps.deploy_context.outputs.deploy_env }}
+        logs_link: ${{ steps.codebuild.outputs.logs_link }}
+        slack_webhook: ${{ env.SLACK_WEBHOOK }}
+
+    # Slack通知: 失敗
+    - name: Notify Failure
+      if: failure() && env.SLACK_WEBHOOK != '' && steps.deploy_gate.outputs.deploy_enabled == 'true'
+      uses: ./.github/actions/notify-slack
+      with:
+        status: failure
+        deploy_env: ${{ steps.deploy_context.outputs.deploy_env }}
+        logs_link: ${{ steps.codebuild.outputs.logs_link }}
+        slack_webhook: ${{ env.SLACK_WEBHOOK }}
+
+    # Slack通知: キャンセル
+    - name: Notify Cancel
+      if: cancelled() && env.SLACK_WEBHOOK != '' && steps.deploy_gate.outputs.deploy_enabled == 'true'
+      uses: ./.github/actions/notify-slack
+      with:
+        status: cancel
+        deploy_env: ${{ steps.deploy_context.outputs.deploy_env }}
+        slack_webhook: ${{ env.SLACK_WEBHOOK }}

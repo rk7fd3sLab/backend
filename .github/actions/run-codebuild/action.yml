@@ -1,0 +1,132 @@
+name: Run CodeBuild and wait for result
+description: CodeBuild ジョブを実行して完了まで監視
+
+inputs:
+  github_sha:
+    description: GitHub SHA
+    required: true
+  github_ref:
+    description: GitHub ref
+    required: true
+  github_ref_name:
+    description: GitHub ref name
+    required: true
+  deploy_env:
+    description: Deployment environment
+    required: true
+  aws_account_id:
+    description: AWS Account ID
+    required: true
+  aws_region:
+    description: AWS Region
+    required: true
+  codebuild_project_name:
+    description: CodeBuild project name
+    required: true
+  ecr_container_name:
+    description: ECR container name
+    required: true
+  ecs_service:
+    description: ECS service name
+    required: true
+  ecs_cluster_name:
+    description: ECS cluster name
+    required: true
+
+outputs:
+  build_id:
+    description: CodeBuild build ID
+    value: ${{ steps.codebuild.outputs.build_id }}
+  logs_link:
+    description: CodeBuild logs link
+    value: ${{ steps.codebuild.outputs.logs_link }}
+
+runs:
+  using: composite
+  steps:
+    - name: Start CodeBuild and wait for result
+      id: codebuild
+      shell: bash
+      env:
+        GITHUB_SHA: ${{ inputs.github_sha }}
+        GITHUB_REF: ${{ inputs.github_ref }}
+        GITHUB_REF_NAME: ${{ inputs.github_ref_name }}
+        DEPLOY_ENV: ${{ inputs.deploy_env }}
+        AWS_ACCOUNT_ID: ${{ inputs.aws_account_id }}
+        AWS_REGION: ${{ inputs.aws_region }}
+        CODEBUILD_PROJECT_NAME: ${{ inputs.codebuild_project_name }}
+        ECR_CONTAINER_NAME: ${{ inputs.ecr_container_name }}
+        ECS_SERVICE: ${{ inputs.ecs_service }}
+        ECS_CLUSTER_NAME: ${{ inputs.ecs_cluster_name }}
+      run: |
+        # イベント種別ごとにSOURCE_VERSIONとRELEASE_TAGを設定
+        if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+          RELEASE_TAG_VALUE="$GITHUB_REF_NAME"
+          SOURCE_VERSION="refs/tags/$GITHUB_REF_NAME"
+        elif [[ "$GITHUB_REF" == refs/heads/release/* ]]; then
+          RELEASE_TAG_VALUE="release-$GITHUB_REF_NAME"
+          SOURCE_VERSION="refs/heads/$GITHUB_REF_NAME"
+        else
+          RELEASE_TAG_VALUE=sha-$(echo "$GITHUB_SHA" | cut -c1-7)
+          SOURCE_VERSION="refs/heads/$GITHUB_REF_NAME"
+        fi
+
+        echo "ref_type=${{ github.ref_type }}, RELEASE_TAG_VALUE=$RELEASE_TAG_VALUE, SOURCE_VERSION=$SOURCE_VERSION"
+
+        # 環境情報を即座にログ出力
+        echo "============================================"
+        echo "Determined Environment: DEPLOY_ENV=$DEPLOY_ENV"
+        echo "Event: ${{ github.event_name }}, Ref: $GITHUB_REF"
+        echo "============================================"
+
+        # buildspec.yml に必要な値を明示的に override で渡す
+        BUILD_ID=$(aws codebuild start-build \
+          --source-version $SOURCE_VERSION \
+          --project-name $CODEBUILD_PROJECT_NAME \
+          --region $AWS_REGION \
+          --no-report-build-status-override \
+          --environment-variables-override \
+            name=DEPLOY_ENV,value=$DEPLOY_ENV,type=PLAINTEXT \
+            name=RELEASE_TAG,value=$RELEASE_TAG_VALUE,type=PLAINTEXT \
+            name=AWS_ACCOUNT_ID,value=$AWS_ACCOUNT_ID,type=PLAINTEXT \
+            name=AWS_REGION,value=$AWS_REGION,type=PLAINTEXT \
+            name=ECR_CONTAINER_NAME,value=$ECR_CONTAINER_NAME,type=PLAINTEXT \
+            name=ECS_SERVICE,value=$ECS_SERVICE,type=PLAINTEXT \
+            name=ECS_CLUSTER_NAME,value=$ECS_CLUSTER_NAME,type=PLAINTEXT \
+          --query 'build.id' \
+          --output text)
+
+        echo "Started CodeBuild: $BUILD_ID"
+        echo "build_id=$BUILD_ID" >> "$GITHUB_OUTPUT"
+
+        # CodeBuildのビルドが完了するまでポーリングして待機する
+        while true; do
+          BUILD_STATUS=$(aws codebuild batch-get-builds --ids "$BUILD_ID" --query 'builds[0].buildStatus' --output text)
+          LOGS_LINK=$(aws codebuild batch-get-builds --ids "$BUILD_ID" --query 'builds[0].logs.deepLink' --output text)
+          echo "CodeBuild status: $BUILD_STATUS"
+          if [ -n "$LOGS_LINK" ] && [ "$LOGS_LINK" != "None" ]; then
+            echo "CodeBuild logs: $LOGS_LINK"
+          fi
+
+          if [ -n "$LOGS_LINK" ] && [ "$LOGS_LINK" != "None" ]; then
+            echo "logs_link=$LOGS_LINK" >> "$GITHUB_OUTPUT"
+          fi
+
+          case "$BUILD_STATUS" in
+            SUCCEEDED)
+              break
+              ;;
+            FAILED|FAULT|TIMED_OUT|STOPPED)
+              echo "CodeBuild failed with status: $BUILD_STATUS"
+              aws codebuild batch-get-builds --ids "$BUILD_ID" --query 'builds[0].phases[].{phase:phaseType,status:phaseStatus,contexts:contexts}' --output table || true
+              exit 1
+              ;;
+            IN_PROGRESS|QUEUED)
+              sleep 15
+              ;;
+            *)
+              echo "Unexpected status: $BUILD_STATUS"
+              sleep 15
+              ;;
+          esac
+        done

@@ -1,0 +1,72 @@
+name: Validate and Gate Deployment
+description: DEPLOY_FLG を判定し、必須設定をチェック
+
+inputs:
+  aws_account_id:
+    description: AWS Account ID secret
+    required: false
+  aws_access_key_id:
+    description: AWS Access Key ID secret
+    required: false
+  aws_secret_access_key:
+    description: AWS Secret Access Key secret
+    required: false
+
+outputs:
+  deploy_enabled:
+    description: Whether deployment is enabled (true/false)
+    value: ${{ steps.gate.outputs.deploy_enabled }}
+
+runs:
+  using: composite
+  steps:
+    - name: Evaluate DEPLOY_FLG
+      id: gate
+      shell: bash
+      run: |
+        DEPLOY_FLG_NORMALIZED="$(echo "${DEPLOY_FLG:-false}" | tr '[:upper:]' '[:lower:]')"
+        echo "DEPLOY_FLG (raw)       : ${DEPLOY_FLG:-false}"
+        echo "DEPLOY_FLG (normalized): $DEPLOY_FLG_NORMALIZED"
+
+        if [[ "$DEPLOY_FLG_NORMALIZED" == "true" ]]; then
+          echo "deploy_enabled=true" >> "$GITHUB_OUTPUT"
+          echo "CD is enabled."
+        else
+          echo "deploy_enabled=false" >> "$GITHUB_OUTPUT"
+          echo "CD is disabled by DEPLOY_FLG. Skipping AWS/CodeBuild/Slack steps."
+        fi
+
+    - name: Validate required settings
+      if: steps.gate.outputs.deploy_enabled == 'true'
+      shell: bash
+      env:
+        AWS_ACCOUNT_ID: ${{ inputs.aws_account_id }}
+        AWS_ACCESS_KEY_ID: ${{ inputs.aws_access_key_id }}
+        AWS_SECRET_ACCESS_KEY: ${{ inputs.aws_secret_access_key }}
+      run: |
+        MISSING=0
+
+        require_var() {
+          local key="$1"
+          local value="$2"
+          if [[ -z "$value" ]]; then
+            echo "Missing required setting: $key"
+            MISSING=1
+          fi
+        }
+
+        require_var "AWS_REGION" "$AWS_REGION"
+        require_var "CODEBUILD_PROJECT_NAME" "$CODEBUILD_PROJECT_NAME"
+        require_var "ECR_CONTAINER_NAME" "$ECR_CONTAINER_NAME"
+        require_var "ECS_SERVICE" "$ECS_SERVICE"
+        require_var "ECS_CLUSTER_NAME" "$ECS_CLUSTER_NAME"
+        require_var "AWS_ACCOUNT_ID (secret)" "$AWS_ACCOUNT_ID"
+        require_var "AWS_ACCESS_KEY_ID (secret)" "$AWS_ACCESS_KEY_ID"
+        require_var "AWS_SECRET_ACCESS_KEY (secret)" "$AWS_SECRET_ACCESS_KEY"
+
+        if [[ "$MISSING" -ne 0 ]]; then
+          echo "Required settings validation failed."
+          exit 1
+        fi
+
+        echo "Required settings validation passed."

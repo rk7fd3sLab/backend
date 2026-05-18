@@ -1,0 +1,71 @@
+# Slack 通知アクション
+# 機能:
+#   - デプロイメントの結果（成功/失敗/キャンセル/スキップ）を Slack に通知
+#   - status 入力値により、異なるメッセージと色で通知
+# 使用例:
+#   - status: success → 「Deploy flow for Backend / Success [dev]」と表示
+#   - status: skipped → 「Deploy flow for Backend / Skipped [stage]」と表示
+
+name: Notify Slack
+description: Slack に通知を送る
+
+inputs:
+  status:
+    description: Notification status (success/failure/cancel/skipped)
+    required: true
+  deploy_env:
+    description: Deployment environment
+    required: true
+  logs_link:
+    description: CodeBuild logs link
+    required: false
+  slack_webhook:
+    description: Slack webhook URL
+    required: true
+
+runs:
+  using: composite
+  steps:
+    # DEPLOY_FLG=false でスキップされた場合の通知
+    # 色: warning（黄） - デプロイは実行されていないが意図的
+    - name: Skipped by DEPLOY_FLG
+      if: inputs.status == 'skipped'
+      uses: rtCamp/action-slack-notify@v2.0.2
+      env:
+        SLACK_WEBHOOK: ${{ inputs.slack_webhook }}
+        SLACK_TITLE: Deploy flow for Backend / Skipped [${{ inputs.deploy_env }}]
+        SLACK_COLOR: warning
+        SLACK_MESSAGE: Deployment skipped - DEPLOY_FLG is disabled
+
+    # CodeBuild 成功時の通知
+    # 色: good（緑） - デプロイ成功
+    - name: Success
+      if: inputs.status == 'success'
+      uses: rtCamp/action-slack-notify@v2.0.2
+      env:
+        SLACK_WEBHOOK: ${{ inputs.slack_webhook }}
+        SLACK_TITLE: Deploy flow for Backend / Success [${{ inputs.deploy_env }}]
+        SLACK_COLOR: good
+        SLACK_MESSAGE: CodeBuild succeeded - ${{ inputs.logs_link }}
+
+    # CodeBuild 失敗時の通知
+    # 色: danger（赤） - デプロイ失敗 - ログリンク付きで確認可能
+    - name: Failure
+      if: inputs.status == 'failure'
+      uses: rtCamp/action-slack-notify@v2.0.2
+      env:
+        SLACK_WEBHOOK: ${{ inputs.slack_webhook }}
+        SLACK_TITLE: Deploy flow for Backend / Failure [${{ inputs.deploy_env }}]
+        SLACK_COLOR: danger
+        SLACK_MESSAGE: CodeBuild failed - ${{ inputs.logs_link }}
+
+    # ワークフロー キャンセル時の通知
+    # 色: danger（赤） - ユーザーがキャンセルした
+    - name: Cancel
+      if: inputs.status == 'cancel'
+      uses: rtCamp/action-slack-notify@v2.0.2
+      env:
+        SLACK_WEBHOOK: ${{ inputs.slack_webhook }}
+        SLACK_TITLE: Deploy flow for Backend / Cancel [${{ inputs.deploy_env }}]
+        SLACK_COLOR: danger
+        SLACK_MESSAGE: Workflow was cancelled by user

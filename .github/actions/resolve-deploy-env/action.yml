@@ -1,0 +1,86 @@
+name: Resolve DEPLOY_ENV and load .env file
+description: DEPLOY_ENV を決定し、対応する .env ファイルを読み込む
+
+inputs:
+  github_ref:
+    description: GitHub ref
+    required: true
+  vars_deploy_flg:
+    description: GitHub vars DEPLOY_FLG override
+    required: false
+  vars_aws_region:
+    description: GitHub vars AWS_REGION override
+    required: false
+  vars_codebuild_project_name:
+    description: GitHub vars CODEBUILD_PROJECT_NAME override
+    required: false
+  vars_ecr_container_name:
+    description: GitHub vars ECR_CONTAINER_NAME override
+    required: false
+  vars_ecs_service:
+    description: GitHub vars ECS_SERVICE override
+    required: false
+  vars_ecs_cluster_name:
+    description: GitHub vars ECS_CLUSTER_NAME override
+    required: false
+
+outputs:
+  deploy_env:
+    description: Determined deployment environment (dev/stage/real)
+    value: ${{ steps.resolve.outputs.deploy_env }}
+
+runs:
+  using: composite
+  steps:
+    - name: Resolve DEPLOY_ENV and load .env file
+      id: resolve
+      shell: bash
+      env:
+        GITHUB_REF: ${{ inputs.github_ref }}
+        VARS_DEPLOY_FLG: ${{ inputs.vars_deploy_flg }}
+        VARS_AWS_REGION: ${{ inputs.vars_aws_region }}
+        VARS_CODEBUILD_PROJECT_NAME: ${{ inputs.vars_codebuild_project_name }}
+        VARS_ECR_CONTAINER_NAME: ${{ inputs.vars_ecr_container_name }}
+        VARS_ECS_SERVICE: ${{ inputs.vars_ecs_service }}
+        VARS_ECS_CLUSTER_NAME: ${{ inputs.vars_ecs_cluster_name }}
+      run: |
+        if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+          DEPLOY_ENV="real"
+        elif [[ "$GITHUB_REF" == refs/heads/release/* ]]; then
+          DEPLOY_ENV="stage"
+        else
+          DEPLOY_ENV="dev"
+        fi
+
+        ENV_FILE=".env.${DEPLOY_ENV}"
+        echo "deploy_env=$DEPLOY_ENV" >> "$GITHUB_OUTPUT"
+        echo "DEPLOY_ENV=$DEPLOY_ENV" >> "$GITHUB_ENV"
+
+        echo "============================================"
+        echo "Determined Environment: DEPLOY_ENV=$DEPLOY_ENV"
+        echo "Candidate env file  : $ENV_FILE"
+        echo "============================================"
+
+        if [[ -f "$ENV_FILE" ]]; then
+          echo "Loading variables from $ENV_FILE"
+          grep -E '^[A-Za-z_][A-Za-z0-9_]*=' "$ENV_FILE" >> "$GITHUB_ENV"
+        else
+          echo "$ENV_FILE not found."
+        fi
+
+        # .env を先に適用し、GitHub vars が設定されていれば上書きする
+        override_if_set() {
+          local key="$1"
+          local value="$2"
+          if [[ -n "$value" ]]; then
+            echo "$key=$value" >> "$GITHUB_ENV"
+            echo "Override from vars: $key"
+          fi
+        }
+
+        override_if_set "DEPLOY_FLG" "$VARS_DEPLOY_FLG"
+        override_if_set "AWS_REGION" "$VARS_AWS_REGION"
+        override_if_set "CODEBUILD_PROJECT_NAME" "$VARS_CODEBUILD_PROJECT_NAME"
+        override_if_set "ECR_CONTAINER_NAME" "$VARS_ECR_CONTAINER_NAME"
+        override_if_set "ECS_SERVICE" "$VARS_ECS_SERVICE"
+        override_if_set "ECS_CLUSTER_NAME" "$VARS_ECS_CLUSTER_NAME"
