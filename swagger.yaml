@@ -1,0 +1,486 @@
+openapi: 3.0.3
+info:
+  title: Equipment Loan Backend API
+  version: 1.0.0
+  description: Expressで実装された備品貸出API
+servers:
+  - url: http://localhost:4000
+    description: Local development
+paths:
+  /api/health:
+    get:
+      tags:
+        - System
+      summary: ヘルスチェック
+      operationId: getHealth
+      responses:
+        "200":
+          description: 正常応答
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+              examples:
+                success:
+                  value:
+                    ok: true
+                    service: equipment-backend
+
+  /api/auth/login:
+    post:
+      tags:
+        - Auth
+      summary: メールアドレスとパスワードでログイン
+      description: 同一アカウントで再ログインすると、それ以前に発行されたトークンは無効化される
+      operationId: login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+      responses:
+        "200":
+          description: ログイン成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoginResponse"
+        "400":
+          description: 入力不備
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                validationError:
+                  value:
+                    message: email and password are required
+        "401":
+          description: 認証失敗
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                invalidCredentials:
+                  value:
+                    message: invalid credentials
+
+  /api/auth/logout:
+    post:
+      tags:
+        - Auth
+      summary: ログアウト
+      description: bearerAuth を使ってログアウトする。実行後はそれまでのトークンが無効化される
+      operationId: logout
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: ログアウト成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LogoutResponse"
+              examples:
+                success:
+                  value:
+                    ok: true
+                    message: logged out
+        "401":
+          description: 未認証または不正トークン
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                invalidated:
+                  value:
+                    message: token expired by newer login or logout
+
+  /api/user:
+    get:
+      tags:
+        - User
+      summary: ログインユーザー情報取得
+      description: bearerAuth を使って取得する（最新ログインのトークンのみ有効）
+      operationId: getUser
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: ユーザー情報
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "401":
+          description: 未認証または不正トークン
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                invalidated:
+                  value:
+                    message: token expired by newer login or logout
+
+  /api/stats:
+    get:
+      tags:
+        - Inventory
+      summary: 在庫統計一覧取得
+      description: member以上のbearerAuthが必要。備品テーブルを集計して統計を返す
+      operationId: getStats
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: 在庫統計
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/InventoryStat"
+              examples:
+                summary:
+                  value:
+                    - label: 登録備品
+                      value: "5"
+                      caption: ノートPC 2 / モニタ 2 / 周辺機器 1
+                    - label: 使用中
+                      value: "2"
+                      caption: 外出・在宅勤務向けに貸出中
+                    - label: 本日の返却予定
+                      value: "0"
+                      caption: 管理画面から返却処理可能
+        "403":
+          description: member未満、未ログイン、または不正トークン
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                forbidden:
+                  value:
+                    message: forbidden
+
+  /api/equipment:
+    get:
+      tags:
+        - Equipment
+      summary: 備品一覧取得
+      description: member以上のbearerAuthが必要。備品テーブルからID昇順で一覧を返す
+      operationId: getEquipment
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: 備品一覧
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/EquipmentItem"
+              examples:
+                list:
+                  value:
+                    - id: eq-001
+                      name: ThinkPad X1 Carbon Gen 12
+                      category: ノートPC
+                      location: 東京オフィス 4F
+                      status: available
+                      assignee: null
+                      requestedBy: null
+                      reservationPeriod: 即日 - 2026/05/12
+                      specs:
+                        - Core Ultra 7
+                        - 32GB RAM
+                        - 14 inch
+                      note: 営業同行用に軽量モデル。USB-C 充電器を付属。
+        "403":
+          description: member未満、未ログイン、または不正トークン
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                forbidden:
+                  value:
+                    message: forbidden
+
+  /api/equipment/{id}:
+    get:
+      tags:
+        - Equipment
+      summary: 備品詳細取得
+      description: member以上のbearerAuthが必要。備品IDで詳細を返す
+      operationId: getEquipmentById
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: "備品ID（例: eq-001）"
+          schema:
+            type: string
+      responses:
+        "403":
+          description: member未満、未ログイン、または不正トークン
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                forbidden:
+                  value:
+                    message: forbidden
+        "404":
+          description: 備品が見つからない
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                notFound:
+                  value:
+                    message: equipment not found
+
+  /api/active-loans:
+    get:
+      tags:
+        - Equipment
+      summary: 貸出中または予約中の備品一覧取得
+      description: member以上のbearerAuthが必要。status が available 以外の備品を返す
+      operationId: getActiveLoans
+      security:
+        - bearerAuth: []
+      responses:
+        "403":
+          description: member未満、未ログイン、または不正トークン
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                forbidden:
+                  value:
+                    message: forbidden
+        "200":
+          description: 貸出中・予約中備品一覧
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/EquipmentItem"
+              examples:
+                active:
+                  value:
+                    - id: eq-002
+                      name: Dell 27 4K USB-C Monitor
+                      category: モニタ
+                      location: 大阪オフィス 2F
+                      status: in_use
+                      assignee: 佐藤 亮
+                      requestedBy: 佐藤 亮
+                      reservationPeriod: 2026/05/01 - 2026/05/15
+                      specs:
+                        - 27 inch
+                        - 4K
+                        - USB-C 90W
+                      note: デザインレビュー室で利用中。返却時は高さ調整台も回収。
+                    - id: eq-003
+                      name: MacBook Pro 14 M4
+                      category: ノートPC
+                      location: 福岡オフィス 3F
+                      status: reserved
+                      assignee: null
+                      requestedBy: 山本 愛
+                      reservationPeriod: 2026/05/10 - 2026/05/20
+                      specs:
+                        - M4 Pro
+                        - 24GB RAM
+                        - 1TB SSD
+                      note: 展示会向けの動画編集用。貸出開始前にFinal Cutの起動確認が必要。
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    HealthResponse:
+      type: object
+      required:
+        - ok
+        - service
+      properties:
+        ok:
+          type: boolean
+          example: true
+        service:
+          type: string
+          example: equipment-backend
+
+    User:
+      type: object
+      required:
+        - employeeId
+        - email
+        - name
+        - department
+        - role
+      properties:
+        employeeId:
+          type: string
+          example: EMP-0142
+        email:
+          type: string
+          format: email
+          example: misaki.tanaka@example.com
+        name:
+          type: string
+          example: 田中 美咲
+        department:
+          type: string
+          example: プロダクト開発部
+        role:
+          type: string
+          example: member
+
+    LoginRequest:
+      type: object
+      required:
+        - email
+        - password
+      properties:
+        email:
+          type: string
+          format: email
+          example: misaki.tanaka@example.com
+        password:
+          type: string
+          format: password
+          example: Passw0rd!
+
+    LoginResponse:
+      type: object
+      required:
+        - accessToken
+        - tokenType
+        - expiresIn
+        - user
+      properties:
+        accessToken:
+          type: string
+          example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+        tokenType:
+          type: string
+          example: Bearer
+        expiresIn:
+          type: string
+          example: 1h
+        user:
+          $ref: "#/components/schemas/User"
+
+    LogoutResponse:
+      type: object
+      required:
+        - ok
+        - message
+      properties:
+        ok:
+          type: boolean
+          example: true
+        message:
+          type: string
+          example: logged out
+
+    InventoryStat:
+      type: object
+      required:
+        - label
+        - value
+        - caption
+      properties:
+        label:
+          type: string
+          example: 登録備品
+        value:
+          type: string
+          example: "28"
+        caption:
+          type: string
+          example: ノートPC 12 / モニタ 10 / 周辺機器 6
+
+    EquipmentItem:
+      type: object
+      required:
+        - id
+        - name
+        - category
+        - location
+        - status
+        - assignee
+        - requestedBy
+        - reservationPeriod
+        - specs
+        - note
+      properties:
+        id:
+          type: string
+          example: eq-001
+        name:
+          type: string
+          example: ThinkPad X1 Carbon Gen 12
+        category:
+          type: string
+          example: ノートPC
+        location:
+          type: string
+          example: 東京オフィス 4F
+        status:
+          type: string
+          enum:
+            - available
+            - in_use
+            - reserved
+          example: available
+        assignee:
+          type: string
+          nullable: true
+          example: null
+        requestedBy:
+          type: string
+          nullable: true
+          example: null
+        reservationPeriod:
+          type: string
+          example: 即日 - 2026/05/12
+        specs:
+          type: array
+          items:
+            type: string
+          example:
+            - Core Ultra 7
+            - 32GB RAM
+            - 14 inch
+        note:
+          type: string
+          example: 営業同行用に軽量モデル。USB-C 充電器を付属。
+
+    ErrorResponse:
+      type: object
+      required:
+        - message
+      properties:
+        message:
+          type: string
+          example: equipment not found

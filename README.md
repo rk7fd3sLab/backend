@@ -12,6 +12,8 @@ Express で構成した社内備品貸出アプリの API サーバーです。
 
 ```bash
 npm install
+npm run db:push
+npm run db:seed
 npm run dev
 ```
 
@@ -24,16 +26,35 @@ npm run start
 ## 提供 API
 
 - `GET /api/health`
-- `GET /api/user`
-- `GET /api/stats`
-- `GET /api/equipment`
-- `GET /api/equipment/:id`
-- `GET /api/active-loans`
+- `POST /api/auth/login`
+- `POST /api/auth/logout` (Bearer認証必須)
+- `GET /api/user` (Bearer認証必須)
+- `GET /api/stats` (member以上の Bearer 認証必須, 未権限は 403)
+- `GET /api/equipment` (member以上の Bearer 認証必須, 未権限は 403)
+- `GET /api/equipment/:id` (member以上の Bearer 認証必須, 未権限は 403)
+- `GET /api/active-loans` (member以上の Bearer 認証必須, 未権限は 403)
 
 ## アプリ設定
 
 - `PORT`: 起動ポート。既定値は `4000`
 - `CORS_ORIGIN`: 許可する frontend のオリジン。既定値は `http://localhost:3000`
+- `DATABASE_URL`: SQLite接続先。既定値は `file:./prisma/dev.db`
+- `JWT_SECRET`: Bearerトークン署名鍵。既定値は `dev-only-secret`
+- `JWT_EXPIRES_IN`: トークン有効期限。既定値は `1h`
+
+## ログイン確認
+
+初期ユーザーは `npm run db:seed` で投入されます。
+
+- `misaki.tanaka@example.com` / `Passw0rd!`
+- `ryo.sato@example.com` / `Passw0rd!`
+- `ai.yamamoto@example.com` / `Passw0rd!`
+- `guest.user@example.com` / `Passw0rd!`（inventory/equipment へのアクセス不可）
+
+認証トークンの仕様:
+
+- 同一アカウントで再ログインすると、以前のトークンは無効化されます
+- `POST /api/auth/logout` 実行後は、発行済みトークンが無効化されます
 
 ## ローカル Docker 実行
 
