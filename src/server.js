@@ -8,6 +8,7 @@ const { registerAuthRoutes } = require("./routes/authRoutes");
 const { registerUserRoutes } = require("./routes/userRoutes");
 const { registerInventoryRoutes } = require("./routes/inventoryRoutes");
 const { registerEquipmentRoutes } = require("./routes/equipmentRoutes");
+const { registerRequestRoutes } = require("./routes/requestRoutes");
 
 const app = express();
 const port = Number(process.env.PORT) || 4000;
@@ -146,6 +147,7 @@ function createBearerAuthMiddleware(deniedStatusCode = 401, minimumRole = null) 
 
 const authenticateBearer = createBearerAuthMiddleware(401);
 const requireMemberForInventoryAndEquipment = createBearerAuthMiddleware(403, "member");
+const requireAdminForEquipmentWrite = createBearerAuthMiddleware(403, "admin");
 
 // 疎通確認用。認証不要で常に応答できる最小エンドポイント。
 app.get("/api/health", (_req, res) => {
@@ -178,7 +180,14 @@ registerInventoryRoutes(app, {
 registerEquipmentRoutes(app, {
   prisma,
   requireMemberForInventoryAndEquipment,
+  requireAdminForEquipmentWrite,
   toEquipmentResponse,
+});
+
+registerRequestRoutes(app, {
+  prisma,
+  requireMemberForRequest: requireMemberForInventoryAndEquipment,
+  requireAdminForRequestApproval: requireAdminForEquipmentWrite,
 });
 
 if (require.main === module) {

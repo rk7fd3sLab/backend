@@ -38,3 +38,24 @@ model Equipment {
   @@index([status])
   @@index([category])
 }
+
+model EquipmentRequest {
+  id                Int      @id @default(autoincrement())
+  equipmentId       String
+  requesterUserId   Int
+  requesterName     String
+  requesterEmail    String
+  reservationPeriod String
+  purpose           String
+  status            String   @default("pending")
+  decidedByUserId   Int?
+  decidedByName     String?
+  decisionReason    String?
+  decidedAt         DateTime?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([equipmentId])
+  @@index([requesterUserId])
+  @@index([status])
+}

@@ -43,6 +43,28 @@ npm run start
 - `GET /api/equipment` (member以上の Bearer 認証必須, 未権限は 403)
 - `GET /api/equipment/:id` (member以上の Bearer 認証必須, 未権限は 403)
 - `GET /api/active-loans` (member以上の Bearer 認証必須, 未権限は 403)
+- `POST /api/equipment` (admin の Bearer 認証必須, 未権限は 403)
+- `PATCH /api/equipment/:id` (admin の Bearer 認証必須, 未権限は 403)
+- `DELETE /api/equipment/:id` (admin の Bearer 認証必須, 未権限は 403)
+- `POST /api/equipment/:id/checkout` (admin の Bearer 認証必須, 未権限は 403)
+- `POST /api/equipment/:id/return` (admin の Bearer 認証必須, 未権限は 403)
+- `POST /api/equipment/:id/requests` (member以上の Bearer 認証必須, 未権限は 403)
+- `GET /api/equipment/:id/requests` (admin の Bearer 認証必須, 未権限は 403)
+- `GET /api/requests/me` (member以上の Bearer 認証必須, 未権限は 403)
+- `GET /api/requests` (admin の Bearer 認証必須, 未権限は 403)
+- `GET /api/requests/:requestId` (member以上の Bearer 認証必須, 他人の申請は 403)
+- `GET /api/requests/pending-count` (admin の Bearer 認証必須, 未権限は 403)
+- `POST /api/requests/:requestId/approve` (admin の Bearer 認証必須, 未権限は 403)
+- `POST /api/requests/:requestId/reject` (admin の Bearer 認証必須, 未権限は 403)
+- `POST /api/requests/:requestId/cancel` (member以上の Bearer 認証必須, 申請者本人またはadmin)
+
+`GET /api/equipment` は以下のクエリで絞り込み可能です。
+
+- `status`: `available` / `in_use` / `reserved`
+- `category`: 完全一致
+- `location`: 部分一致
+- `keyword`: `id` / `name` / `note` の部分一致
+- `page`, `limit`: ページング（指定時はレスポンスヘッダー `X-Total-Count`, `X-Page`, `X-Limit` を返却）
 
 ## アプリ設定
 
@@ -58,7 +80,9 @@ npm run start
 
 - `misaki.tanaka@example.com` / `Passw0rd!`
 - `ryo.sato@example.com` / `Passw0rd!`
+- `naoki.admin@example.com` / `Passw0rd!`
 - `ai.yamamoto@example.com` / `Passw0rd!`
+- `haruka.member@example.com` / `Passw0rd!`
 - `guest.user@example.com` / `Passw0rd!`（inventory/equipment へのアクセス不可）
 
 認証トークンの仕様:

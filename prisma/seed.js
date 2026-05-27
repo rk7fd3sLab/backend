@@ -42,10 +42,26 @@ const seedUsers = [
     role: "admin",
   },
   {
+    employeeId: "EMP-0410",
+    email: "naoki.admin@example.com",
+    password: "Passw0rd!",
+    name: "中村 直樹",
+    department: "情報システム部",
+    role: "admin",
+  },
+  {
     employeeId: "EMP-0211",
     email: "ai.yamamoto@example.com",
     password: "Passw0rd!",
     name: "山本 愛",
+    department: "営業企画部",
+    role: "member",
+  },
+  {
+    employeeId: "EMP-0320",
+    email: "haruka.member@example.com",
+    password: "Passw0rd!",
+    name: "吉田 はるか",
     department: "営業企画部",
     role: "member",
   },
@@ -84,6 +100,8 @@ async function main() {
       },
     });
   }
+
+  await prisma.equipmentRequest.deleteMany();
 
   await prisma.equipment.deleteMany();
 

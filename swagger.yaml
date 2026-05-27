@@ -172,10 +172,48 @@ paths:
       tags:
         - Equipment
       summary: 備品一覧取得
-      description: member以上のbearerAuthが必要。備品テーブルからID昇順で一覧を返す
+      description: member以上のbearerAuthが必要。条件絞り込みとページングに対応し、ID昇順で一覧を返す
       operationId: getEquipment
       security:
         - bearerAuth: []
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - available
+              - in_use
+              - reserved
+        - name: category
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: location
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: keyword
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
       responses:
         "200":
           description: 備品一覧
@@ -211,6 +249,51 @@ paths:
                 forbidden:
                   value:
                     message: forbidden
+        "400":
+          description: クエリ不正
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    post:
+      tags:
+        - Equipment
+      summary: 備品追加
+      description: admin の bearerAuth が必要。新規備品を登録する
+      operationId: createEquipment
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EquipmentUpsertRequest"
+      responses:
+        "201":
+          description: 作成成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EquipmentItem"
+        "400":
+          description: 入力不正
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: admin未満、未ログイン、または不正トークン
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: 同一IDが既に存在
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
 
   /api/equipment/{id}:
     get:
@@ -229,6 +312,12 @@ paths:
           schema:
             type: string
       responses:
+        "200":
+          description: 備品詳細
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EquipmentItem"
         "403":
           description: member未満、未ログイン、または不正トークン
           content:
@@ -249,6 +338,539 @@ paths:
                 notFound:
                   value:
                     message: equipment not found
+    patch:
+      tags:
+        - Equipment
+      summary: 備品更新
+      description: admin の bearerAuth が必要。指定IDの備品情報を部分更新する
+      operationId: updateEquipment
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EquipmentPatchRequest"
+      responses:
+        "200":
+          description: 更新成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EquipmentItem"
+        "400":
+          description: 入力不正
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: admin未満、未ログイン、または不正トークン
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: 備品が見つからない
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    delete:
+      tags:
+        - Equipment
+      summary: 備品削除
+      description: admin の bearerAuth が必要。指定IDの備品を削除する
+      operationId: deleteEquipment
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: 削除成功
+        "403":
+          description: admin未満、未ログイン、または不正トークン
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: 備品が見つからない
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/equipment/{id}/checkout:
+    post:
+      tags:
+        - Equipment
+      summary: 備品貸出開始
+      description: admin の bearerAuth が必要。空き備品を貸出中へ変更する
+      operationId: checkoutEquipment
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EquipmentCheckoutRequest"
+      responses:
+        "200":
+          description: 貸出開始成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EquipmentItem"
+        "400":
+          description: 入力不正
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: admin未満、未ログイン、または不正トークン
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: 備品が見つからない
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: 備品が貸出可能状態でない
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/equipment/{id}/return:
+    post:
+      tags:
+        - Equipment
+      summary: 備品返却処理
+      description: admin の bearerAuth が必要。貸出中/予約中備品を空きへ戻す
+      operationId: returnEquipment
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: 返却処理成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EquipmentItem"
+        "403":
+          description: admin未満、未ログイン、または不正トークン
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: 備品が見つからない
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: 既に空き状態
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/equipment/{id}/requests:
+    get:
+      tags:
+        - Request
+      summary: 備品単位の申請履歴
+      description: admin の bearerAuth が必要。指定備品の申請履歴を新しい順で返す
+      operationId: getEquipmentRequests
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: 申請履歴一覧
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/EquipmentRequest"
+        "403":
+          description: admin未満、未ログイン、または不正トークン
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    post:
+      tags:
+        - Request
+      summary: 備品貸出申請作成
+      description: member以上の bearerAuth が必要。対象備品に対する申請を作成する
+      operationId: createEquipmentRequest
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EquipmentRequestCreateRequest"
+      responses:
+        "201":
+          description: 申請作成成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EquipmentRequest"
+        "400":
+          description: 入力不正
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: member未満、未ログイン、または不正トークン
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: 備品が見つからない
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: 申請競合（備品使用中など）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/requests/me:
+    get:
+      tags:
+        - Request
+      summary: 自分の申請一覧
+      description: member以上の bearerAuth が必要。ログインユーザーの申請を返す
+      operationId: getMyRequests
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: 申請一覧
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/EquipmentRequest"
+        "403":
+          description: member未満、未ログイン、または不正トークン
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/requests:
+    get:
+      tags:
+        - Request
+      summary: 全申請一覧
+      description: admin の bearerAuth が必要。status/equipmentId/requesterEmail で絞り込み可能
+      operationId: getAllRequests
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - pending
+              - approved
+              - rejected
+              - cancelled
+        - name: equipmentId
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: requesterEmail
+          in: query
+          required: false
+          schema:
+            type: string
+            format: email
+      responses:
+        "200":
+          description: 全申請一覧
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/EquipmentRequest"
+        "403":
+          description: admin未満、未ログイン、または不正トークン
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/requests/pending-count:
+    get:
+      tags:
+        - Request
+      summary: 承認待ち件数
+      description: admin の bearerAuth が必要。pending 申請件数を返す
+      operationId: getPendingRequestCount
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: 件数取得成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PendingCountResponse"
+        "403":
+          description: admin未満、未ログイン、または不正トークン
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/requests/{requestId}:
+    get:
+      tags:
+        - Request
+      summary: 申請詳細
+      description: member以上の bearerAuth が必要。本人申請またはadminのみ参照可
+      operationId: getRequestById
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: requestId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: 申請詳細
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EquipmentRequest"
+        "400":
+          description: requestId 不正
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: 権限不足
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: 申請が見つからない
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/requests/{requestId}/approve:
+    post:
+      tags:
+        - Request
+      summary: 申請承認
+      description: admin の bearerAuth が必要。pending 申請を承認し対象備品を reserved に更新する
+      operationId: approveRequest
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: requestId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: 承認成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EquipmentRequest"
+        "400":
+          description: requestId 不正
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: admin未満、未ログイン、または不正トークン
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: 申請または備品が見つからない
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: 申請状態または備品状態が承認不可
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/requests/{requestId}/reject:
+    post:
+      tags:
+        - Request
+      summary: 申請却下
+      description: admin の bearerAuth が必要。pending 申請を却下する
+      operationId: rejectRequest
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: requestId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EquipmentRequestRejectRequest"
+      responses:
+        "200":
+          description: 却下成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EquipmentRequest"
+        "400":
+          description: 入力不正
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: admin未満、未ログイン、または不正トークン
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: 申請が見つからない
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: pending以外で却下不可
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/requests/{requestId}/cancel:
+    post:
+      tags:
+        - Request
+      summary: 申請取り下げ
+      description: member以上の bearerAuth が必要。申請者本人またはadminが pending 申請を取り下げる
+      operationId: cancelRequest
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: requestId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: 取り下げ成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EquipmentRequest"
+        "400":
+          description: requestId 不正
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: 権限不足
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: 申請が見つからない
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: pending以外は取り下げ不可
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
 
   /api/active-loans:
     get:
@@ -475,6 +1097,189 @@ components:
         note:
           type: string
           example: 営業同行用に軽量モデル。USB-C 充電器を付属。
+
+    EquipmentUpsertRequest:
+      type: object
+      required:
+        - id
+        - name
+        - category
+        - location
+        - reservationPeriod
+        - specs
+        - note
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        category:
+          type: string
+        location:
+          type: string
+        status:
+          type: string
+          enum:
+            - available
+            - in_use
+            - reserved
+        assignee:
+          type: string
+          nullable: true
+        requestedBy:
+          type: string
+          nullable: true
+        reservationPeriod:
+          type: string
+        specs:
+          type: array
+          items:
+            type: string
+        note:
+          type: string
+
+    EquipmentPatchRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        category:
+          type: string
+        location:
+          type: string
+        status:
+          type: string
+          enum:
+            - available
+            - in_use
+            - reserved
+        assignee:
+          type: string
+          nullable: true
+        requestedBy:
+          type: string
+          nullable: true
+        reservationPeriod:
+          type: string
+        specs:
+          type: array
+          items:
+            type: string
+        note:
+          type: string
+
+    EquipmentCheckoutRequest:
+      type: object
+      required:
+        - assignee
+        - requestedBy
+        - reservationPeriod
+      properties:
+        assignee:
+          type: string
+        requestedBy:
+          type: string
+        reservationPeriod:
+          type: string
+
+    EquipmentRequestCreateRequest:
+      type: object
+      required:
+        - reservationPeriod
+        - purpose
+      properties:
+        reservationPeriod:
+          type: string
+          example: 2026/07/01 - 2026/07/10
+        purpose:
+          type: string
+          example: 展示会利用
+
+    EquipmentRequestRejectRequest:
+      type: object
+      required:
+        - reason
+      properties:
+        reason:
+          type: string
+          example: 日程が重複
+
+    EquipmentRequest:
+      type: object
+      required:
+        - id
+        - equipmentId
+        - requesterUserId
+        - requesterName
+        - requesterEmail
+        - reservationPeriod
+        - purpose
+        - status
+        - createdAt
+        - updatedAt
+      properties:
+        id:
+          type: integer
+          example: 101
+        equipmentId:
+          type: string
+          example: eq-001
+        requesterUserId:
+          type: integer
+          example: 5
+        requesterName:
+          type: string
+          example: 山本 愛
+        requesterEmail:
+          type: string
+          format: email
+          example: ai.yamamoto@example.com
+        reservationPeriod:
+          type: string
+          example: 2026/07/01 - 2026/07/10
+        purpose:
+          type: string
+          example: 展示会利用
+        status:
+          type: string
+          enum:
+            - pending
+            - approved
+            - rejected
+            - cancelled
+          example: pending
+        decisionReason:
+          type: string
+          nullable: true
+          example: null
+        decidedByUserId:
+          type: integer
+          nullable: true
+          example: null
+        decidedByName:
+          type: string
+          nullable: true
+          example: null
+        decidedAt:
+          type: string
+          format: date-time
+          nullable: true
+          example: null
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    PendingCountResponse:
+      type: object
+      required:
+        - pendingCount
+      properties:
+        pendingCount:
+          type: integer
+          example: 3
 
     ErrorResponse:
       type: object

@@ -10,7 +10,7 @@
     "db:push": "prisma generate && prisma db push",
     "db:seed": "prisma db seed",
     "db:reset": "prisma generate && prisma db push --force-reset && prisma db seed",
-    "test": "npm run db:push && npm run db:seed && jest"
+    "test": "npm run db:push && npm run db:seed && jest --runInBand"
   },
   "keywords": [],
   "author": "",
