@@ -17,6 +17,16 @@ npm run db:seed
 npm run dev
 ```
 
+### 開発モード（毎回データを初期化して起動）
+
+```bash
+npm install
+npm run dev:reset
+```
+
+`npm run dev:reset` は起動前に DB を完全リセットして seed を再投入します。
+API で変更したデータを毎回初期状態に戻してから開発を始めたい場合に使ってください。
+
 ### 本番起動
 
 ```bash

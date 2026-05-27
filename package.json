@@ -5,9 +5,11 @@
   "main": "src/server.js",
   "scripts": {
     "dev": "node --watch src/server.js",
+    "dev:reset": "npm run db:reset && npm run dev",
     "start": "node src/server.js",
     "db:push": "prisma generate && prisma db push",
     "db:seed": "prisma db seed",
+    "db:reset": "prisma generate && prisma db push --force-reset && prisma db seed",
     "test": "npm run db:push && npm run db:seed && jest"
   },
   "keywords": [],
@@ -22,11 +24,9 @@
     "jsonwebtoken": "^9.0.3"
   },
   "devDependencies": {
+    "dotenv": "^17.4.2",
     "jest": "^30.4.2",
     "prisma": "^6.16.2",
     "supertest": "^7.1.4"
-  },
-  "prisma": {
-    "seed": "node prisma/seed.js"
   }
 }
