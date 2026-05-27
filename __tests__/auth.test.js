@@ -23,6 +23,13 @@ describe("auth API", () => {
     expect(response.body).toEqual({ message: "invalid credentials" });
   });
 
+  test("POST /api/auth/login returns 400 with invalid email format", async () => {
+    const response = await loginAs("invalid-email", "Passw0rd!");
+
+    expect(response.status).toBe(400);
+    expect(response.body).toEqual({ message: "email must be a valid address" });
+  });
+
   test("POST /api/auth/logout returns 401 without bearer token", async () => {
     const response = await request(app).post("/api/auth/logout");
 

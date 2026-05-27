@@ -2,16 +2,30 @@ function registerAuthRoutes(
   app,
   { prisma, bcrypt, jwt, jwtSecret, jwtExpiresIn, authenticateBearer, toPublicUser },
 ) {
+  function isValidEmail(email) {
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+  }
+
   // ログイン時にtokenVersionを更新し、同一ユーザーの旧トークンを失効させる。
   app.post("/api/auth/login", async (req, res) => {
     const { email, password } = req.body || {};
 
-    if (!email || !password) {
+    if (typeof email !== "string" || typeof password !== "string" || !email.trim() || !password.trim()) {
       return res.status(400).json({ message: "email and password are required" });
     }
 
+    const normalizedEmail = email.trim().toLowerCase();
+
+    if (!isValidEmail(normalizedEmail)) {
+      return res.status(400).json({ message: "email must be a valid address" });
+    }
+
+    if (password.length < 8) {
+      return res.status(400).json({ message: "password must be at least 8 characters" });
+    }
+
     const user = await prisma.user.findUnique({
-      where: { email },
+      where: { email: normalizedEmail },
     });
 
     if (!user) {

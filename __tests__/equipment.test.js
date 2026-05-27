@@ -133,6 +133,26 @@ describe("equipment API", () => {
     expect(response.body).toEqual({ message: "forbidden" });
   });
 
+  test("POST /api/equipment returns 400 for invalid category", async () => {
+    const adminLogin = await loginAs("ryo.sato@example.com", "Passw0rd!");
+    const adminToken = adminLogin.body.accessToken;
+    const response = await request(app)
+      .post("/api/equipment")
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({
+        id: `eq-invalid-${Date.now()}`,
+        name: "Invalid Category Device",
+        category: "その他",
+        location: "東京オフィス 1F",
+        reservationPeriod: "2026/06/01 - 2026/06/10",
+        specs: ["USB-C"],
+        note: "validation test",
+      });
+
+    expect(response.status).toBe(400);
+    expect(response.body).toEqual({ message: "category must be one of ノートPC, モニタ, 周辺機器" });
+  });
+
   test("POST/PATCH/DELETE /api/equipment works for admin role", async () => {
     const adminLogin = await loginAs("ryo.sato@example.com", "Passw0rd!");
     const adminToken = adminLogin.body.accessToken;

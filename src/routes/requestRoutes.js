@@ -2,6 +2,14 @@ function registerRequestRoutes(
   app,
   { prisma, requireMemberForRequest, requireAdminForRequestApproval },
 ) {
+  function isValidEmail(email) {
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+  }
+
+  function isValidReservationPeriod(reservationPeriod) {
+    return /\d{4}\/\d{2}\/\d{2}$/.test(String(reservationPeriod || ""));
+  }
+
   function isAdmin(user) {
     return user && user.role === "admin";
   }
@@ -53,6 +61,24 @@ function registerRequestRoutes(
       return res.status(400).json({ message: "reservationPeriod and purpose are required" });
     }
 
+    if (
+      typeof reservationPeriod !== "string"
+      || typeof purpose !== "string"
+      || !reservationPeriod.trim()
+      || !purpose.trim()
+    ) {
+      return res.status(400).json({ message: "reservationPeriod and purpose must be non-empty strings" });
+    }
+
+    if (!isValidReservationPeriod(reservationPeriod)) {
+      return res.status(400).json({ message: "reservationPeriod must end with YYYY/MM/DD" });
+    }
+
+    const normalizedPurpose = purpose.trim();
+    if (normalizedPurpose.length < 2 || normalizedPurpose.length > 200) {
+      return res.status(400).json({ message: "purpose must be between 2 and 200 characters" });
+    }
+
     const equipment = await prisma.equipment.findUnique({
       where: { id: req.params.id },
     });
@@ -84,7 +110,7 @@ function registerRequestRoutes(
         requesterName: req.user.name,
         requesterEmail: req.user.email,
         reservationPeriod: String(reservationPeriod).trim(),
-        purpose: String(purpose).trim(),
+        purpose: normalizedPurpose,
       },
     });
 
@@ -174,6 +200,10 @@ function registerRequestRoutes(
     if (requesterEmail !== undefined) {
       if (typeof requesterEmail !== "string" || !requesterEmail.trim()) {
         return res.status(400).json({ message: "requesterEmail must be a non-empty string" });
+      }
+
+      if (!isValidEmail(requesterEmail.trim())) {
+        return res.status(400).json({ message: "requesterEmail must be a valid address" });
       }
 
       where.requesterEmail = requesterEmail.trim();
@@ -295,6 +325,11 @@ function registerRequestRoutes(
       return res.status(400).json({ message: "reason is required" });
     }
 
+    const normalizedReason = String(reason).trim();
+    if (normalizedReason.length < 2 || normalizedReason.length > 200) {
+      return res.status(400).json({ message: "reason must be between 2 and 200 characters" });
+    }
+
     const targetRequest = await prisma.equipmentRequest.findUnique({
       where: { id: requestId },
     });
@@ -314,7 +349,7 @@ function registerRequestRoutes(
         decidedByUserId: req.user.id,
         decidedByName: req.user.name,
         decidedAt: new Date(),
-        decisionReason: String(reason).trim(),
+        decisionReason: normalizedReason,
       },
     });
 

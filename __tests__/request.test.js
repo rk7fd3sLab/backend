@@ -78,6 +78,29 @@ describe("request API", () => {
       .set("Authorization", `Bearer ${adminToken}`);
   });
 
+  test("POST /api/equipment/:id/requests returns 400 with invalid reservationPeriod", async () => {
+    const adminLogin = await loginAs("naoki.admin@example.com", "Passw0rd!");
+    const adminToken = adminLogin.body.accessToken;
+    const memberLogin = await loginAs("haruka.member@example.com", "Passw0rd!");
+    const memberToken = memberLogin.body.accessToken;
+    const equipmentId = await createTempEquipment(adminToken);
+
+    const createRequest = await request(app)
+      .post(`/api/equipment/${equipmentId}/requests`)
+      .set("Authorization", `Bearer ${memberToken}`)
+      .send({
+        reservationPeriod: "invalid-period",
+        purpose: "検証利用",
+      });
+
+    expect(createRequest.status).toBe(400);
+    expect(createRequest.body).toEqual({ message: "reservationPeriod must end with YYYY/MM/DD" });
+
+    await request(app)
+      .delete(`/api/equipment/${equipmentId}`)
+      .set("Authorization", `Bearer ${adminToken}`);
+  });
+
   test("admin can approve pending request", async () => {
     const adminLogin = await loginAs("naoki.admin@example.com", "Passw0rd!");
     const adminToken = adminLogin.body.accessToken;
@@ -260,6 +283,18 @@ describe("request API", () => {
     await request(app)
       .delete(`/api/equipment/${equipmentId}`)
       .set("Authorization", `Bearer ${adminToken}`);
+  });
+
+  test("GET /api/requests returns 400 with invalid requesterEmail filter", async () => {
+    const adminLogin = await loginAs("naoki.admin@example.com", "Passw0rd!");
+    const adminToken = adminLogin.body.accessToken;
+
+    const response = await request(app)
+      .get("/api/requests?requesterEmail=invalid-email")
+      .set("Authorization", `Bearer ${adminToken}`);
+
+    expect(response.status).toBe(400);
+    expect(response.body).toEqual({ message: "requesterEmail must be a valid address" });
   });
 
   test("admin can get request history by equipment id", async () => {

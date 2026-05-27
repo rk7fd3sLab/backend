@@ -8,6 +8,11 @@ function registerEquipmentRoutes(
   },
 ) {
   const allowedStatuses = new Set(["available", "in_use", "reserved"]);
+  const allowedCategories = new Set(["ノートPC", "モニタ", "周辺機器"]);
+
+  function isValidReservationPeriod(reservationPeriod) {
+    return /\d{4}\/\d{2}\/\d{2}$/.test(String(reservationPeriod || ""));
+  }
 
   function extractReservationEndDate(reservationPeriod) {
     const match = String(reservationPeriod || "").match(/(\d{4})\/(\d{2})\/(\d{2})$/);
@@ -75,6 +80,10 @@ function registerEquipmentRoutes(
       normalized.status = source.status;
     }
 
+    if (normalized.category !== undefined && !allowedCategories.has(normalized.category)) {
+      return { error: "category must be one of ノートPC, モニタ, 周辺機器" };
+    }
+
     if (source.specs !== undefined) {
       if (!Array.isArray(source.specs) || source.specs.some((item) => typeof item !== "string" || !item.trim())) {
         return { error: "specs must be a non-empty string array" };
@@ -84,6 +93,10 @@ function registerEquipmentRoutes(
     }
 
     if (normalized.reservationPeriod !== undefined) {
+      if (!isValidReservationPeriod(normalized.reservationPeriod)) {
+        return { error: "reservationPeriod must end with YYYY/MM/DD" };
+      }
+
       normalized.reservationEndDate = extractReservationEndDate(normalized.reservationPeriod);
     }
 
@@ -106,6 +119,10 @@ function registerEquipmentRoutes(
     if (category !== undefined) {
       if (typeof category !== "string" || !category.trim()) {
         return res.status(400).json({ message: "category must be a non-empty string" });
+      }
+
+      if (!allowedCategories.has(category.trim())) {
+        return res.status(400).json({ message: "category must be one of ノートPC, モニタ, 周辺機器" });
       }
 
       where.category = category.trim();
@@ -292,6 +309,21 @@ function registerEquipmentRoutes(
 
     if (!assignee || !requestedBy || !reservationPeriod) {
       return res.status(400).json({ message: "assignee, requestedBy and reservationPeriod are required" });
+    }
+
+    if (
+      typeof assignee !== "string"
+      || typeof requestedBy !== "string"
+      || typeof reservationPeriod !== "string"
+      || !assignee.trim()
+      || !requestedBy.trim()
+      || !reservationPeriod.trim()
+    ) {
+      return res.status(400).json({ message: "assignee, requestedBy and reservationPeriod must be non-empty strings" });
+    }
+
+    if (!isValidReservationPeriod(reservationPeriod)) {
+      return res.status(400).json({ message: "reservationPeriod must end with YYYY/MM/DD" });
     }
 
     const equipment = await prisma.equipment.findUnique({

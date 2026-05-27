@@ -190,6 +190,27 @@ registerRequestRoutes(app, {
   requireAdminForRequestApproval: requireAdminForEquipmentWrite,
 });
 
+// 未定義ルートは共通の404で返す。
+app.use((_req, res) => {
+  res.status(404).json({ message: "not found" });
+});
+
+// 予期しない例外もJSONで統一して返す。
+app.use((error, _req, res, _next) => {
+  console.error(error);
+
+  const status = Number.isInteger(error?.status) && error.status >= 400 && error.status < 600
+    ? error.status
+    : 500;
+  const message = status === 500 ? "internal server error" : (error?.message || "error");
+
+  if (error?.details !== undefined) {
+    return res.status(status).json({ message, details: error.details });
+  }
+
+  return res.status(status).json({ message });
+});
+
 if (require.main === module) {
   // テストからrequireされた場合はlistenしない。
   app.listen(port, () => {
